@@ -413,80 +413,6 @@ class DataFrameFunctionsSuite extends QueryTest with SharedSQLContext {
     )
   }
 
-  test("concat function - arrays") {
-    val nseqi : Seq[Int] = null
-    val nseqs : Seq[String] = null
-    val df = Seq(
-
-      (Seq(1), Seq(2, 3), Seq(5L, 6L), nseqi, Seq("a", "b", "c"), Seq("d", "e"), Seq("f"), nseqs),
-      (Seq(1, 0), Seq.empty[Int], Seq(2L), nseqi, Seq("a"), Seq.empty[String], Seq(null), nseqs)
-    ).toDF("i1", "i2", "i3", "in", "s1", "s2", "s3", "sn")
-
-    val dummyFilter = (c: Column) => c.isNull || c.isNotNull // switch codeGen on
-
-    // Simple test cases
-    checkAnswer(
-      df.selectExpr("array(1, 2, 3L)"),
-      Seq(Row(Seq(1L, 2L, 3L)), Row(Seq(1L, 2L, 3L)))
-    )
-
-    checkAnswer (
-      df.select(concat($"i1", $"s1")),
-      Seq(Row(Seq("1", "a", "b", "c")), Row(Seq("1", "0", "a")))
-    )
-    checkAnswer(
-      df.select(concat($"i1", $"i2", $"i3")),
-      Seq(Row(Seq(1, 2, 3, 5, 6)), Row(Seq(1, 0, 2)))
-    )
-    checkAnswer(
-      df.filter(dummyFilter($"i1")).select(concat($"i1", $"i2", $"i3")),
-      Seq(Row(Seq(1, 2, 3, 5, 6)), Row(Seq(1, 0, 2)))
-    )
-    checkAnswer(
-      df.selectExpr("concat(array(1, null), i2, i3)"),
-      Seq(Row(Seq(1, null, 2, 3, 5, 6)), Row(Seq(1, null, 2)))
-    )
-    checkAnswer(
-      df.select(concat($"s1", $"s2", $"s3")),
-      Seq(Row(Seq("a", "b", "c", "d", "e", "f")), Row(Seq("a", null)))
-    )
-    checkAnswer(
-      df.selectExpr("concat(s1, s2, s3)"),
-      Seq(Row(Seq("a", "b", "c", "d", "e", "f")), Row(Seq("a", null)))
-    )
-    checkAnswer(
-      df.filter(dummyFilter($"s1"))select(concat($"s1", $"s2", $"s3")),
-      Seq(Row(Seq("a", "b", "c", "d", "e", "f")), Row(Seq("a", null)))
-    )
-
-    // Null test cases
-    checkAnswer(
-      df.select(concat($"i1", $"in")),
-      Seq(Row(null), Row(null))
-    )
-    checkAnswer(
-      df.select(concat($"in", $"i1")),
-      Seq(Row(null), Row(null))
-    )
-    checkAnswer(
-      df.select(concat($"s1", $"sn")),
-      Seq(Row(null), Row(null))
-    )
-    checkAnswer(
-      df.select(concat($"sn", $"s1")),
-      Seq(Row(null), Row(null))
-    )
-
-    // Type error test cases
-    intercept[AnalysisException] {
-      df.selectExpr("concat(i1, i2, null)")
-    }
-
-    intercept[AnalysisException] {
-      df.selectExpr("concat(i1, array(i1, i2))")
-    }
-  }
-
   test("flatten function") {
     val dummyFilter = (c: Column) => c.isNull || c.isNotNull // to switch codeGen on
     val oneRowDF = Seq((1, "a", Seq(1, 2, 3))).toDF("i", "s", "arr")
@@ -657,6 +583,181 @@ class DataFrameFunctionsSuite extends QueryTest with SharedSQLContext {
     }
     intercept[AnalysisException] {
       oneRowDF.selectExpr("reverse(map(1, 'a'))")
+    }
+  }
+
+  test("concat function - arrays") {
+    val nseqi : Seq[Int] = null
+    val nseqs : Seq[String] = null
+    val df = Seq(
+
+      (Seq(1), Seq(2, 3), Seq(5L, 6L), nseqi, Seq("a", "b", "c"), Seq("d", "e"), Seq("f"), nseqs),
+      (Seq(1, 0), Seq.empty[Int], Seq(2L), nseqi, Seq("a"), Seq.empty[String], Seq(null), nseqs)
+    ).toDF("i1", "i2", "i3", "in", "s1", "s2", "s3", "sn")
+
+    val dummyFilter = (c: Column) => c.isNull || c.isNotNull // switch codeGen on
+
+    // Simple test cases
+    checkAnswer(
+      df.selectExpr("array(1, 2, 3L)"),
+      Seq(Row(Seq(1L, 2L, 3L)), Row(Seq(1L, 2L, 3L)))
+    )
+
+    checkAnswer (
+      df.select(concat($"i1", $"s1")),
+      Seq(Row(Seq("1", "a", "b", "c")), Row(Seq("1", "0", "a")))
+    )
+    checkAnswer(
+      df.select(concat($"i1", $"i2", $"i3")),
+      Seq(Row(Seq(1, 2, 3, 5, 6)), Row(Seq(1, 0, 2)))
+    )
+    checkAnswer(
+      df.filter(dummyFilter($"i1")).select(concat($"i1", $"i2", $"i3")),
+      Seq(Row(Seq(1, 2, 3, 5, 6)), Row(Seq(1, 0, 2)))
+    )
+    checkAnswer(
+      df.selectExpr("concat(array(1, null), i2, i3)"),
+      Seq(Row(Seq(1, null, 2, 3, 5, 6)), Row(Seq(1, null, 2)))
+    )
+    checkAnswer(
+      df.select(concat($"s1", $"s2", $"s3")),
+      Seq(Row(Seq("a", "b", "c", "d", "e", "f")), Row(Seq("a", null)))
+    )
+    checkAnswer(
+      df.selectExpr("concat(s1, s2, s3)"),
+      Seq(Row(Seq("a", "b", "c", "d", "e", "f")), Row(Seq("a", null)))
+    )
+    checkAnswer(
+      df.filter(dummyFilter($"s1"))select(concat($"s1", $"s2", $"s3")),
+      Seq(Row(Seq("a", "b", "c", "d", "e", "f")), Row(Seq("a", null)))
+    )
+
+    // Null test cases
+    checkAnswer(
+      df.select(concat($"i1", $"in")),
+      Seq(Row(null), Row(null))
+    )
+    checkAnswer(
+      df.select(concat($"in", $"i1")),
+      Seq(Row(null), Row(null))
+    )
+    checkAnswer(
+      df.select(concat($"s1", $"sn")),
+      Seq(Row(null), Row(null))
+    )
+    checkAnswer(
+      df.select(concat($"sn", $"s1")),
+      Seq(Row(null), Row(null))
+    )
+
+    // Type error test cases
+    intercept[AnalysisException] {
+      df.selectExpr("concat(i1, i2, null)")
+    }
+
+    intercept[AnalysisException] {
+      df.selectExpr("concat(i1, array(i1, i2))")
+    }
+  }
+
+  test("zip_with_index function") {
+    val dummyFilter = (c: Column) => c.isNull || c.isNotNull // switch codegen on
+    val oneRowDF = Seq(("Spark", 3215, true)).toDF("s", "i", "b")
+
+    // Test cases with primitive-type elements
+    val idf = Seq(
+      Seq(1, 9, 8, 7),
+      Seq.empty,
+      null
+    ).toDF("i")
+
+    checkAnswer(
+      idf.select(zip_with_index('i)),
+      Seq(Row(Seq(Row(1, 0), Row(9, 1), Row(8, 2), Row(7, 3))), Row(Seq.empty), Row(null))
+    )
+    checkAnswer(
+      idf.filter(dummyFilter('i)).select(zip_with_index('i)),
+      Seq(Row(Seq(Row(1, 0), Row(9, 1), Row(8, 2), Row(7, 3))), Row(Seq.empty), Row(null))
+    )
+    checkAnswer(
+      idf.select(zip_with_index('i, true)),
+      Seq(Row(Seq(Row(0, 1), Row(1, 9), Row(2, 8), Row(3, 7))), Row(Seq.empty), Row(null))
+    )
+    checkAnswer(
+      idf.selectExpr("zip_with_index(i)"),
+      Seq(Row(Seq(Row(1, 0), Row(9, 1), Row(8, 2), Row(7, 3))), Row(Seq.empty), Row(null))
+    )
+    checkAnswer(
+      idf.selectExpr("zip_with_index(i, true)"),
+      Seq(Row(Seq(Row(0, 1), Row(1, 9), Row(2, 8), Row(3, 7))), Row(Seq.empty), Row(null))
+    )
+    checkAnswer(
+      oneRowDF.selectExpr("zip_with_index(array(null, 2, null), false)"),
+      Seq(Row(Seq(Row(null, 0), Row(2, 1), Row(null, 2))))
+    )
+    checkAnswer(
+      oneRowDF.selectExpr("zip_with_index(array(null, 2, null), true)"),
+      Seq(Row(Seq(Row(0, null), Row(1, 2), Row(2, null))))
+    )
+
+    // Test cases with non-primitive-type elements
+    val sdf = Seq(
+      Seq("c", "a", "d", "b"),
+      Seq(null, "x", null),
+      Seq.empty,
+      null
+    ).toDF("s")
+
+    checkAnswer(
+      sdf.select(zip_with_index('s)),
+      Seq(
+        Row(Seq(Row("c", 0), Row("a", 1), Row("d", 2), Row("b", 3))),
+        Row(Seq(Row(null, 0), Row("x", 1), Row(null, 2))),
+        Row(Seq.empty),
+        Row(null))
+    )
+    checkAnswer(
+      sdf.filter(dummyFilter('s)).select(zip_with_index('s)),
+      Seq(
+        Row(Seq(Row("c", 0), Row("a", 1), Row("d", 2), Row("b", 3))),
+        Row(Seq(Row(null, 0), Row("x", 1), Row(null, 2))),
+        Row(Seq.empty),
+        Row(null))
+    )
+    checkAnswer(
+      sdf.select(zip_with_index('s, true)),
+      Seq(
+        Row(Seq(Row(0, "c"), Row(1, "a"), Row(2, "d"), Row(3, "b"))),
+        Row(Seq(Row(0, null), Row(1, "x"), Row(2, null))),
+        Row(Seq.empty),
+        Row(null))
+    )
+    checkAnswer(
+      sdf.selectExpr("zip_with_index(s)"),
+      Seq(
+        Row(Seq(Row("c", 0), Row("a", 1), Row("d", 2), Row("b", 3))),
+        Row(Seq(Row(null, 0), Row("x", 1), Row(null, 2))),
+        Row(Seq.empty),
+        Row(null))
+    )
+    checkAnswer(
+      sdf.selectExpr("zip_with_index(s, true)"),
+      Seq(
+        Row(Seq(Row(0, "c"), Row(1, "a"), Row(2, "d"), Row(3, "b"))),
+        Row(Seq(Row(0, null), Row(1, "x"), Row(2, null))),
+        Row(Seq.empty),
+        Row(null))
+    )
+
+    // Error test cases
+    intercept[AnalysisException] {
+      oneRowDF.select(zip_with_index('s))
+    }
+    intercept[AnalysisException] {
+      oneRowDF.selectExpr("zip_with_index(array(1, 2, 3), b)")
+    }
+    intercept[AnalysisException] {
+      oneRowDF.selectExpr("zip_with_index(array(1, 2, 3), 1)")
     }
   }
 
