@@ -2065,6 +2065,24 @@ def reverse(col):
 
 
 @since(2.4)
+def zip_with_index(col, indexFirst=False):
+    """
+    Collection function: transforms the input array by encapsulating elements into pairs
+    with indexes indicating the order.
+
+    :param col: name of column or expression
+
+    >>> df = spark.createDataFrame([([2, 5, 3],), ([],)], ['data'])
+    >>> df.select(zip_with_index(df.data).alias('r')).collect()
+    [Row(r=[[value=2, index=0], [value=5, index=1], [value=3, index=2]]), Row(r=[])]
+    >>> df.select(zip_with_index(df.data, indexFirst=True).alias('r')).collect()
+    [Row(r=[[index=0, value=2], [index=1, value=5], [index=2, value=3]]), Row(r=[])]
+     """
+    sc = SparkContext._active_spark_context
+    return Column(sc._jvm.functions.zip_with_index(_to_java_column(col), indexFirst))
+
+
+@since(2.4)
 def flatten(col):
     """
     Collection function: creates a single array from an array of arrays.

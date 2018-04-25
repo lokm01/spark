@@ -409,6 +409,7 @@ object FunctionRegistry {
     expression[Concat]("concat"),
     expression[Flatten]("flatten"),
     expression[Reverse]("reverse"),
+    expression[ZipWithIndex]("zip_with_index"),
     CreateStruct.registryEntry,
 
     // misc functions
