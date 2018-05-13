@@ -825,7 +825,18 @@ class Analyzer(
         result
       case UnresolvedExtractValue(child, fieldExpr) if child.resolved =>
         ExtractValue(child, fieldExpr, resolver)
-      case _ => e.mapChildren(resolve(_, q))
+      case _ => e.mapChildren(resolve(_, q)).mapChildren(resolveLambdaVariables(_))
+    }
+
+    private def resolveLambdaVariables(e: Expression): Expression = e match {
+      case Transform(l, r) if ArrayType.acceptsType(l.dataType) =>
+        Transform(l, resolveLambdaVariables(r, l.dataType.asInstanceOf[ArrayType].elementType))
+      case _ => e.mapChildren(resolveLambdaVariables(_))
+    }
+
+    private def resolveLambdaVariables(e: Expression, dt: DataType): Expression = e match {
+      case UnresolvedLambdaVariable => LambdaVar(dt)
+      case _ => e.mapChildren(resolveLambdaVariables(_, dt))
     }
 
     def apply(plan: LogicalPlan): LogicalPlan = plan.transformUp {

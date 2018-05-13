@@ -19,14 +19,13 @@ package org.apache.spark.sql
 
 import scala.collection.JavaConverters._
 import scala.language.implicitConversions
-import scala.reflect.runtime.universe.{typeTag, TypeTag}
+import scala.reflect.runtime.universe.{TypeTag, typeTag}
 import scala.util.Try
 import scala.util.control.NonFatal
-
 import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.api.java._
 import org.apache.spark.sql.catalyst.ScalaReflection
-import org.apache.spark.sql.catalyst.analysis.{Star, UnresolvedFunction}
+import org.apache.spark.sql.catalyst.analysis.{Star, UnresolvedFunction, UnresolvedLambdaVariable}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -2960,6 +2959,15 @@ object functions {
   //////////////////////////////////////////////////////////////////////////////////////////////
   // Collection functions
   //////////////////////////////////////////////////////////////////////////////////////////////
+
+  def ^(dt: DataType): Column = withExpr { LambdaVar(dt) }
+
+  val _$: Column = withExpr { UnresolvedLambdaVariable }
+
+
+  def transform(array: Column, cWithLambda: Column): Column = withExpr {
+    Transform(array.expr, cWithLambda.expr)
+  }
 
   /**
    * Returns null if the array is null, true if the array contains `value`, and false otherwise.
