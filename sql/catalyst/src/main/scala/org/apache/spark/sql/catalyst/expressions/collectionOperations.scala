@@ -902,7 +902,7 @@ case class ZipWithIndex(child: Expression, indexFirst: Expression)
   override def prettyName: String = "zip_with_index"
 }
 
-case class LambdaVar(dataType: DataType) extends LeafExpression with CodegenFallback {
+case class LambdaVar(name: String, dataType: DataType) extends LeafExpression with CodegenFallback {
   override def nullable: Boolean = false
 
   private var currentValue: Any = null
@@ -914,9 +914,11 @@ case class LambdaVar(dataType: DataType) extends LeafExpression with CodegenFall
   override def eval(input: InternalRow): Any = currentValue
 
   override def prettyName: String = "_$"
+
+  override def toString: String = s"$prettyName($name)"
 }
 
-case class Transform(left: Expression, right: Expression) extends BinaryExpression
+case class Transform(left: Expression, right: Expression, variableName: String) extends BinaryExpression
   with ExpectsInputTypes with CodegenFallback {
 
   override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, AnyDataType)
@@ -930,7 +932,7 @@ case class Transform(left: Expression, right: Expression) extends BinaryExpressi
   private lazy val lambdas: Seq[LambdaVar] = getLambdas(right)
 
   private def getLambdas(e: Expression): Seq[LambdaVar] = e match {
-    case l: LambdaVar => Seq(l)
+    case l@LambdaVar(name, _) if name == variableName => Seq(l)
     case e => e.children.flatMap(getLambdas(_))
   }
 

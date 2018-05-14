@@ -344,17 +344,17 @@ class CollectionExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper
   test("Transform") {
     val ai1 = Literal.create(Seq(1, 2, 3, 4, 5, 6), ArrayType(IntegerType))
     val ai2 = Literal.create(null, ArrayType(IntegerType))
-    val iLambda = Multiply(LambdaVar(IntegerType), Literal.create(2, IntegerType))
-    checkEvaluation(Transform(ai1, iLambda), Seq(1, 2, 3, 4, 5, 6).map(_ * 2))
-    checkEvaluation(Transform(ai2, iLambda), null)
+    val iLambda = Multiply(LambdaVar("i", IntegerType), Literal.create(2, IntegerType))
+    checkEvaluation(Transform(ai1, iLambda, "i"), Seq(1, 2, 3, 4, 5, 6).map(_ * 2))
+    checkEvaluation(Transform(ai2, iLambda, "i"), null)
 
     val as1 = Literal.create(Seq("a", "b", "c", "d", "e", "f"), ArrayType(StringType))
     val as2 = Literal.create(Seq("a", null, "c", null, null, "f"), ArrayType(StringType))
     val as3 = Literal.create(null, ArrayType(StringType))
-    val sLambda = StringRepeat(LambdaVar(StringType), Literal.create(2, IntegerType))
-    checkEvaluation(Transform(as1, sLambda), Seq("aa", "bb", "cc", "dd", "ee", "ff"))
-    checkEvaluation(Transform(as2, sLambda), Seq("aa", null, "cc", null, null, "ff"))
-    checkEvaluation(Transform(as3, sLambda), null)
+    val sLambda = StringRepeat(LambdaVar("s", StringType), Literal.create(2, IntegerType))
+    checkEvaluation(Transform(as1, sLambda, "s"), Seq("aa", "bb", "cc", "dd", "ee", "ff"))
+    checkEvaluation(Transform(as2, sLambda, "s"), Seq("aa", null, "cc", null, null, "ff"))
+    checkEvaluation(Transform(as3, sLambda, "s"), null)
 
   }
 }

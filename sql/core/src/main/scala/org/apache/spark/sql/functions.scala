@@ -2961,13 +2961,13 @@ object functions {
   // Collection functions
   //////////////////////////////////////////////////////////////////////////////////////////////
 
-  def ^(dt: DataType): Column = withExpr { LambdaVar(dt) }
 
-  val _$: Column = withExpr { UnresolvedLambdaVariable }
+  def _$(name: String): Column = withExpr { UnresolvedLambdaVariable(name) }
 
+  def _$(name: String, dataType: DataType): Column = withExpr { LambdaVar(name, dataType) }
 
-  def transform(array: Column, cWithLambda: Column): Column = withExpr {
-    Transform(array.expr, cWithLambda.expr)
+  def transform(array: Column, variableName: String, cWithLambda: Column): Column = withExpr {
+    Transform(array.expr, cWithLambda.expr, variableName)
   }
 
   /**

@@ -829,14 +829,20 @@ class Analyzer(
     }
 
     private def resolveLambdaVariables(e: Expression): Expression = e match {
-      case Transform(l, r) if ArrayType.acceptsType(l.dataType) =>
-        Transform(l, resolveLambdaVariables(r, l.dataType.asInstanceOf[ArrayType].elementType))
+      case Transform(l, r, v) if ArrayType.acceptsType(l.dataType) =>
+        Transform(
+          l,
+          resolveLambdaVariables(r, v, l.dataType.asInstanceOf[ArrayType].elementType),
+          v).mapChildren(resolveLambdaVariables(_))
       case _ => e.mapChildren(resolveLambdaVariables(_))
     }
 
-    private def resolveLambdaVariables(e: Expression, dt: DataType): Expression = e match {
-      case UnresolvedLambdaVariable => LambdaVar(dt)
-      case _ => e.mapChildren(resolveLambdaVariables(_, dt))
+    private def resolveLambdaVariables(
+        e: Expression,
+        variableName: String,
+        dt: DataType): Expression = e match {
+      case UnresolvedLambdaVariable(name) if name == variableName => LambdaVar(name, dt)
+      case _ => e.mapChildren(resolveLambdaVariables(_, variableName, dt))
     }
 
     def apply(plan: LogicalPlan): LogicalPlan = plan.transformUp {
