@@ -153,6 +153,7 @@ class Analyzer(
       ResolveTableValuedFunctions ::
       ResolveRelations ::
       ResolveReferences ::
+      ResolveLambdas ::
       ResolveCreateNamedStruct ::
       ResolveDeserializer ::
       ResolveNewInstance ::
@@ -825,24 +826,7 @@ class Analyzer(
         result
       case UnresolvedExtractValue(child, fieldExpr) if child.resolved =>
         ExtractValue(child, fieldExpr, resolver)
-      case _ => e.mapChildren(resolve(_, q)).mapChildren(resolveLambdaVariables(_))
-    }
-
-    private def resolveLambdaVariables(e: Expression): Expression = e match {
-      case Transform(l, r, v) if ArrayType.acceptsType(l.dataType) =>
-        Transform(
-          l,
-          resolveLambdaVariables(r, v, l.dataType.asInstanceOf[ArrayType].elementType),
-          v).mapChildren(resolveLambdaVariables(_))
-      case _ => e.mapChildren(resolveLambdaVariables(_))
-    }
-
-    private def resolveLambdaVariables(
-        e: Expression,
-        variableName: String,
-        dt: DataType): Expression = e match {
-      case UnresolvedLambdaVariable(name) if name == variableName => LambdaVar(name, dt)
-      case _ => e.mapChildren(resolveLambdaVariables(_, variableName, dt))
+      case _ => e.mapChildren(resolve(_, q))
     }
 
     def apply(plan: LogicalPlan): LogicalPlan = plan.transformUp {
@@ -2141,6 +2125,31 @@ class Analyzer(
     }
     // use Project to trim unnecessary fields
     Project(projectList, Join(left, right, joinType, newCondition))
+  }
+
+  object ResolveLambdas extends Rule[LogicalPlan] {
+    override def apply(plan: LogicalPlan): LogicalPlan = {
+      plan.transform{
+        case p => p.transformExpressions {
+          case Transform(l, r, v) if l.resolved && ArrayType.acceptsType(l.dataType) =>
+            val arrayType = l.dataType.asInstanceOf[ArrayType]
+            Transform(
+              l,
+              resolveLambdaVariables(r, v, arrayType.elementType, arrayType.containsNull),
+              v)
+        }
+      }
+    }
+
+
+    private def resolveLambdaVariables(
+        e: Expression,
+        variableName: String,
+        dt: DataType,
+        nullable: Boolean): Expression = e match {
+      case UnresolvedLambdaVariable(name) if name == variableName => LambdaVar(name, dt, nullable)
+      case _ => e.mapChildren(resolveLambdaVariables(_, variableName, dt, nullable))
+    }
   }
 
   /**

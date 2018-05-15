@@ -2964,7 +2964,9 @@ object functions {
 
   def _$(name: String): Column = withExpr { UnresolvedLambdaVariable(name) }
 
-  def _$(name: String, dataType: DataType): Column = withExpr { LambdaVar(name, dataType) }
+  def _$(name: String, dataType: DataType, nullable: Boolean): Column = withExpr {
+    LambdaVar(name, dataType, nullable)
+  }
 
   def transform(array: Column, variableName: String, cWithLambda: Column): Column = withExpr {
     Transform(array.expr, cWithLambda.expr, variableName)

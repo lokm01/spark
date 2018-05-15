@@ -482,7 +482,7 @@ case class UnresolvedOrdinal(ordinal: Int)
 }
 
 case class UnresolvedLambdaVariable(name: String)
-    extends LeafExpression with Unevaluable with NonSQLExpression {
+    extends LeafExpression with Unevaluable {
   override def dataType: DataType = throw new UnresolvedException(this, "dataType")
   override def foldable: Boolean = throw new UnresolvedException(this, "foldable")
   override def nullable: Boolean = throw new UnresolvedException(this, "nullable")
