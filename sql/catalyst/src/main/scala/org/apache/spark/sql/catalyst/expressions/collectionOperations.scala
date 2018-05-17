@@ -20,9 +20,12 @@ import java.util.Comparator
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodegenFallback, ExprCode}
+import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodeGenerator, CodegenFallback, ExprCode}
 import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, MapData}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.Platform
+import org.apache.spark.unsafe.array.ByteArrayMethods
+import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Given an array or map, returns its size. Returns -1 if null.
@@ -213,6 +216,93 @@ case class SortArray(base: Expression, ascendingOrder: Expression)
 }
 
 /**
+ * Returns a reversed string or an array with reverse order of elements.
+ */
+@ExpressionDescription(
+  usage = "_FUNC_(array) - Returns a reversed string or an array with reverse order of elements.",
+  examples = """
+    Examples:
+      > SELECT _FUNC_('Spark SQL');
+       LQS krapS
+      > SELECT _FUNC_(array(2, 1, 4, 3));
+       [3, 4, 1, 2]
+  """,
+  since = "1.5.0",
+  note = "Reverse logic for arrays is available since 2.4.0."
+)
+case class Reverse(child: Expression) extends UnaryExpression with ImplicitCastInputTypes {
+
+  // Input types are utilized by type coercion in ImplicitTypeCasts.
+  override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(StringType, ArrayType))
+
+  override def dataType: DataType = child.dataType
+
+  lazy val elementType: DataType = dataType.asInstanceOf[ArrayType].elementType
+
+  override def nullSafeEval(input: Any): Any = input match {
+    case a: ArrayData => new GenericArrayData(a.toObjectArray(elementType).reverse)
+    case s: UTF8String => s.reverse()
+  }
+
+  override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
+    nullSafeCodeGen(ctx, ev, c => dataType match {
+      case _: StringType => stringCodeGen(ev, c)
+      case _: ArrayType => arrayCodeGen(ctx, ev, c)
+    })
+  }
+
+  private def stringCodeGen(ev: ExprCode, childName: String): String = {
+    s"${ev.value} = ($childName).reverse();"
+  }
+
+  private def arrayCodeGen(ctx: CodegenContext, ev: ExprCode, childName: String): String = {
+    val length = ctx.freshName("length")
+    val javaElementType = ctx.javaType(elementType)
+    val isPrimitiveType = ctx.isPrimitiveType(elementType)
+
+    val initialization = if (isPrimitiveType) {
+      s"$childName.copy()"
+    } else {
+      s"new ${classOf[GenericArrayData].getName()}(new Object[$length])"
+    }
+
+    val numberOfIterations = if (isPrimitiveType) s"$length / 2" else length
+
+    val swapAssigments = if (isPrimitiveType) {
+      val setFunc = "set" + ctx.primitiveTypeName(elementType)
+      val getCall = (index: String) => ctx.getValue(ev.value, elementType, index)
+      s"""|boolean isNullAtK = ${ev.value}.isNullAt(k);
+          |boolean isNullAtL = ${ev.value}.isNullAt(l);
+          |if(!isNullAtK) {
+          |  $javaElementType el = ${getCall("k")};
+          |  if(!isNullAtL) {
+          |    ${ev.value}.$setFunc(k, ${getCall("l")});
+          |  } else {
+          |    ${ev.value}.setNullAt(k);
+          |  }
+          |  ${ev.value}.$setFunc(l, el);
+          |} else if (!isNullAtL) {
+          |  ${ev.value}.$setFunc(k, ${getCall("l")});
+          |  ${ev.value}.setNullAt(l);
+          |}""".stripMargin
+    } else {
+      s"${ev.value}.update(k, ${ctx.getValue(childName, elementType, "l")});"
+    }
+
+    s"""
+       |final int $length = $childName.numElements();
+       |${ev.value} = $initialization;
+       |for(int k = 0; k < $numberOfIterations; k++) {
+       |  int l = $length - k - 1;
+       |  $swapAssigments
+       |}
+     """.stripMargin
+  }
+
+  override def prettyName: String = "reverse"
+}
+
+/**
  * Checks if the array (left) has the element (right)
  */
 @ExpressionDescription(
@@ -286,4 +376,180 @@ case class ArrayContains(left: Expression, right: Expression)
   }
 
   override def prettyName: String = "array_contains"
+}
+
+/**
+ * Transforms an array of arrays into a single array.
+ */
+@ExpressionDescription(
+  usage = "_FUNC_(arrayOfArrays) - Transforms an array of arrays into a single array.",
+  examples = """
+    Examples:
+      > SELECT _FUNC_(array(array(1, 2), array(3, 4));
+       [1,2,3,4]
+  """,
+  since = "2.4.0")
+case class Flatten(child: Expression) extends UnaryExpression {
+
+  private val MAX_ARRAY_LENGTH = ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
+
+  private lazy val childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
+
+  override def nullable: Boolean = child.nullable || childDataType.containsNull
+
+  override def dataType: DataType = childDataType.elementType
+
+  lazy val elementType: DataType = dataType.asInstanceOf[ArrayType].elementType
+
+  override def checkInputDataTypes(): TypeCheckResult = child.dataType match {
+    case ArrayType(_: ArrayType, _) =>
+      TypeCheckResult.TypeCheckSuccess
+    case _ =>
+      TypeCheckResult.TypeCheckFailure(
+        s"The argument should be an array of arrays, " +
+        s"but '${child.sql}' is of ${child.dataType.simpleString} type."
+      )
+  }
+
+  override def nullSafeEval(child: Any): Any = {
+    val elements = child.asInstanceOf[ArrayData].toObjectArray(dataType)
+
+    if (elements.contains(null)) {
+      null
+    } else {
+      val arrayData = elements.map(_.asInstanceOf[ArrayData])
+      val numberOfElements = arrayData.foldLeft(0L)((sum, e) => sum + e.numElements())
+      if (numberOfElements > MAX_ARRAY_LENGTH) {
+        throw new RuntimeException("Unsuccessful try to flatten an array of arrays with " +
+          s" $numberOfElements elements due to exceeding the array size limit $MAX_ARRAY_LENGTH.")
+      }
+      val flattenedData = new Array(numberOfElements.toInt)
+      var position = 0
+      for (ad <- arrayData) {
+        val arr = ad.toObjectArray(elementType)
+        Array.copy(arr, 0, flattenedData, position, arr.length)
+        position += arr.length
+      }
+      new GenericArrayData(flattenedData)
+    }
+  }
+
+  override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
+    nullSafeCodeGen(ctx, ev, c => {
+      val code = if (ctx.isPrimitiveType(elementType)) {
+        genCodeForFlattenOfPrimitiveElements(ctx, c, ev.value)
+      } else {
+        genCodeForFlattenOfNonPrimitiveElements(ctx, c, ev.value)
+      }
+      nullElementsProtection(ev, c, code)
+    })
+  }
+
+  private def nullElementsProtection(
+      ev: ExprCode,
+      childVariableName: String,
+      coreLogic: String): String = {
+    s"""
+    |for (int z=0; !${ev.isNull} && z < $childVariableName.numElements(); z++) {
+    |  ${ev.isNull} |= $childVariableName.isNullAt(z);
+    |}
+    |if (!${ev.isNull}) {
+    |  $coreLogic
+    |}
+    """.stripMargin
+  }
+
+  private def genCodeForNumberOfElements(
+      ctx: CodegenContext,
+      childVariableName: String) : (String, String) = {
+    val variableName = ctx.freshName("numElements")
+    val code = s"""
+      |long $variableName = 0;
+      |for (int z=0; z < $childVariableName.numElements(); z++) {
+      |  $variableName += $childVariableName.getArray(z).numElements();
+      |}
+      |if ($variableName > ${MAX_ARRAY_LENGTH}) {
+      |  throw new RuntimeException("Unsuccessful try to flatten an array of arrays with" +
+      |    " $variableName elements due to exceeding the array size limit $MAX_ARRAY_LENGTH.");
+      |}
+      """.stripMargin
+    (code, variableName)
+  }
+
+  private def genCodeForFlattenOfPrimitiveElements(
+      ctx: CodegenContext,
+      childVariableName: String,
+      arrayDataName: String): String = {
+    val arrayName = ctx.freshName("array")
+    val arraySizeName = ctx.freshName("size")
+    val counter = ctx.freshName("counter")
+    val tempArrayDataName = ctx.freshName("tempArrayData")
+
+    val (numElemCode, numElemName) = genCodeForNumberOfElements(ctx, childVariableName)
+
+    val unsafeArraySizeInBytes = s"""
+      |long $arraySizeName = UnsafeArrayData.calculateSizeOfUnderlyingByteArray(
+      |  $numElemName,
+      |  ${elementType.defaultSize});
+      |if ($arraySizeName > $MAX_ARRAY_LENGTH) {
+      |  throw new RuntimeException("Unsuccessful try to flatten an array of arrays with" +
+      |    " $arraySizeName bytes of data due to exceeding the limit $MAX_ARRAY_LENGTH" +
+      |    " bytes for UnsafeArrayData.");
+      |}
+      """.stripMargin
+    val baseOffset = Platform.BYTE_ARRAY_OFFSET
+
+    val primitiveValueTypeName = ctx.primitiveTypeName(elementType)
+
+    s"""
+    |$numElemCode
+    |$unsafeArraySizeInBytes
+    |byte[] $arrayName = new byte[(int)$arraySizeName];
+    |UnsafeArrayData $tempArrayDataName = new UnsafeArrayData();
+    |Platform.putLong($arrayName, $baseOffset, $numElemName);
+    |$tempArrayDataName.pointTo($arrayName, $baseOffset, (int)$arraySizeName);
+    |int $counter = 0;
+    |for (int k=0; k < $childVariableName.numElements(); k++) {
+    |  ArrayData arr = $childVariableName.getArray(k);
+    |  for (int l = 0; l < arr.numElements(); l++) {
+    |   if (arr.isNullAt(l)) {
+    |     $tempArrayDataName.setNullAt($counter);
+    |   } else {
+    |     $tempArrayDataName.set$primitiveValueTypeName(
+    |       $counter,
+    |       ${ctx.getValue("arr", elementType, "l")}
+    |     );
+    |   }
+    |   $counter++;
+    | }
+    |}
+    |$arrayDataName = $tempArrayDataName;
+    """.stripMargin
+  }
+
+  private def genCodeForFlattenOfNonPrimitiveElements(
+      ctx: CodegenContext,
+      childVariableName: String,
+      arrayDataName: String): String = {
+    val genericArrayClass = classOf[GenericArrayData].getName
+    val arrayName = ctx.freshName("arrayObject")
+    val counter = ctx.freshName("counter")
+    val (numElemCode, numElemName) = genCodeForNumberOfElements(ctx, childVariableName)
+
+    s"""
+    |$numElemCode
+    |Object[] $arrayName = new Object[(int)$numElemName];
+    |int $counter = 0;
+    |for (int k=0; k < $childVariableName.numElements(); k++) {
+    |  ArrayData arr = $childVariableName.getArray(k);
+    |  for (int l = 0; l < arr.numElements(); l++) {
+    |    $arrayName[$counter] = ${ctx.getValue("arr", elementType, "l")};
+    |    $counter++;
+    |  }
+    |}
+    |$arrayDataName = new $genericArrayClass($arrayName);
+    """.stripMargin
+  }
+
+  override def prettyName: String = "flatten"
 }
