@@ -24,6 +24,7 @@ import org.scalatest.prop.GeneratorDrivenPropertyChecks
 
 import org.apache.spark.{SparkConf, SparkFunSuite}
 import org.apache.spark.serializer.JavaSerializer
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.analysis.{ResolveTimeZone, SimpleAnalyzer}
 import org.apache.spark.sql.catalyst.expressions.codegen._
@@ -88,6 +89,10 @@ trait ExpressionEvalHelper extends GeneratorDrivenPropertyChecks {
         if (expected.isNaN) result.isNaN else expected == result
       case (result: Float, expected: Float) =>
         if (expected.isNaN) result.isNaN else expected == result
+      case (result: InternalRow, expected: InternalRow) =>
+        val structType = dataType.asInstanceOf[StructType]
+        result.toSeq(structType) == expected.toSeq(structType)
+      case (result: Row, expected: InternalRow) => result.toSeq == expected.toSeq(result.schema)
       case _ =>
         result == expected
     }
