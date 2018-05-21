@@ -902,3 +902,54 @@ case class ZipWithIndex(child: Expression, indexFirst: Expression)
   override def prettyName: String = "zip_with_index"
 }
 
+case class LambdaVar(name: String, dataType: DataType, nullable: Boolean) extends LeafExpression with CodegenFallback {
+
+  override def foldable: Boolean = false
+
+  private var currentValue: Any = null
+
+  def setValue(newValue: Any): Unit = {
+    currentValue = newValue
+  }
+
+  override def eval(input: InternalRow): Any = currentValue
+
+  override def prettyName: String = "_$"
+
+  override def toString: String = s"$prettyName($name)"
+}
+
+case class Transform(left: Expression, right: Expression, variableName: String) extends BinaryExpression
+  with ExpectsInputTypes with CodegenFallback {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, AnyDataType)
+
+  override def dataType: DataType = ArrayType(right.dataType, right.nullable)
+
+  @transient
+  private lazy val sourceType: ArrayType = left.dataType.asInstanceOf[ArrayType]
+
+  @transient
+  private lazy val lambdas: Seq[LambdaVar] = getLambdas(right)
+
+  private def getLambdas(e: Expression): Seq[LambdaVar] = e match {
+    case l@LambdaVar(name, _, _) if name == variableName => Seq(l)
+    case e => e.children.flatMap(getLambdas(_))
+  }
+
+  override def eval(input: InternalRow): Any = {
+    val value1 = left.eval(input)
+    if (value1 == null) {
+      null
+    } else {
+      val sourceData = value1.asInstanceOf[ArrayData].toObjectArray(sourceType.elementType)
+      val data = sourceData.map(i => {
+        lambdas.foreach(_.setValue(i))
+        right.eval(input)
+      })
+      ArrayData.toArrayData(data)
+    }
+  }
+
+  override def prettyName: String = "transform"
+}

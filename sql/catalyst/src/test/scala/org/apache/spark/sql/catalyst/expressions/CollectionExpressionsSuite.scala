@@ -340,4 +340,21 @@ class CollectionExpressionsSuite extends SparkFunSuite with ExpressionEvalHelper
     checkEvaluation(ZipWithIndex(as5, t), null)
     checkEvaluation(ZipWithIndex(aas, t), Seq(r(0, Seq("e")), r(1, Seq("c", "d"))))
   }
+
+  test("Transform") {
+    val ai1 = Literal.create(Seq(1, 2, 3, 4, 5, 6), ArrayType(IntegerType))
+    val ai2 = Literal.create(null, ArrayType(IntegerType))
+    val iLambda = Multiply(LambdaVar("i", IntegerType, false), Literal.create(2, IntegerType))
+    checkEvaluation(Transform(ai1, iLambda, "i"), Seq(1, 2, 3, 4, 5, 6).map(_ * 2))
+    checkEvaluation(Transform(ai2, iLambda, "i"), null)
+
+    val as1 = Literal.create(Seq("a", "b", "c", "d", "e", "f"), ArrayType(StringType))
+    val as2 = Literal.create(Seq("a", null, "c", null, null, "f"), ArrayType(StringType))
+    val as3 = Literal.create(null, ArrayType(StringType))
+    val sLambda = StringRepeat(LambdaVar("s", StringType, true), Literal.create(2, IntegerType))
+    checkEvaluation(Transform(as1, sLambda, "s"), Seq("aa", "bb", "cc", "dd", "ee", "ff"))
+    checkEvaluation(Transform(as2, sLambda, "s"), Seq("aa", null, "cc", null, null, "ff"))
+    checkEvaluation(Transform(as3, sLambda, "s"), null)
+
+  }
 }

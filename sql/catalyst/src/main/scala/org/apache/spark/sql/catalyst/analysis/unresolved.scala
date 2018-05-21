@@ -480,3 +480,13 @@ case class UnresolvedOrdinal(ordinal: Int)
   override def nullable: Boolean = throw new UnresolvedException(this, "nullable")
   override lazy val resolved = false
 }
+
+case class UnresolvedLambdaVariable(name: String)
+    extends LeafExpression with Unevaluable {
+  override def dataType: DataType = throw new UnresolvedException(this, "dataType")
+  override def foldable: Boolean = throw new UnresolvedException(this, "foldable")
+  override def nullable: Boolean = throw new UnresolvedException(this, "nullable")
+  override lazy val resolved = false
+  override def prettyName: String = "_$"
+  override def toString: String = s"$prettyName($name)"
+}

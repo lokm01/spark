@@ -26,7 +26,7 @@ import scala.util.control.NonFatal
 import org.apache.spark.annotation.InterfaceStability
 import org.apache.spark.sql.api.java._
 import org.apache.spark.sql.catalyst.ScalaReflection
-import org.apache.spark.sql.catalyst.analysis.{Star, UnresolvedFunction}
+import org.apache.spark.sql.catalyst.analysis.{Star, UnresolvedFunction, UnresolvedLambdaVariable}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
@@ -3018,6 +3018,17 @@ object functions {
   //////////////////////////////////////////////////////////////////////////////////////////////
   // Collection functions
   //////////////////////////////////////////////////////////////////////////////////////////////
+
+
+  def _$(name: String): Column = withExpr { UnresolvedLambdaVariable(name) }
+
+  def _$(name: String, dataType: DataType, nullable: Boolean): Column = withExpr {
+    LambdaVar(name, dataType, nullable)
+  }
+
+  def transform(array: Column, variableName: String, cWithLambda: Column): Column = withExpr {
+    Transform(array.expr, cWithLambda.expr, variableName)
+  }
 
   /**
    * Returns null if the array is null, true if the array contains `value`, and false otherwise.
